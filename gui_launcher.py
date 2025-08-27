@@ -60,6 +60,14 @@ class TFTStatsGUI:
         self.enable_ocr = True
         self.selected_level = None
         
+        # 新增：手动触发按钮状态控制
+        self.manual_trigger_active = False
+        self.manual_trigger_thread = None
+        self.manual_trigger_event = threading.Event()
+        
+        # 新增：费用筛选控制
+        self.selected_cost_filter = None
+        
         # 初始化组件
         self.database = TFTStatsDatabase()
         self.ocr = None
@@ -136,6 +144,11 @@ class TFTStatsGUI:
                                     font=('Arial', 12), bg='#3498db', fg='white',
                                     width=15, height=2)
         self.trigger_btn.pack(side='left', padx=5)
+        
+        # 手动触发状态指示标签
+        self.trigger_status_label = tk.Label(row1, text="", font=('Arial', 10), 
+                                           fg='#f1c40f', bg='#db7891')
+        self.trigger_status_label.pack(side='left', padx=5)
         
         # 记录保存按钮
         self.save_btn = tk.Button(row1, text="保存记录", command=self.save_records,
@@ -270,15 +283,6 @@ class TFTStatsGUI:
         except Exception as e:
             self.log_message(f"Level按钮点击错误: {e}")
     
-    def update_level_count(self, level, count):
-        """更新指定Level的计数"""
-        try:
-            if level in self.count_labels:
-                self.count_labels[level].config(text=str(count))
-                self.log_message(f"Level {level} 计数更新为: {count}")
-        except Exception as e:
-            self.log_message(f"更新Level计数错误: {e}")
-    
     def reset_all_counts(self):
         """重置所有计数器为0"""
         try:
@@ -411,10 +415,21 @@ class TFTStatsGUI:
         self.start_stop_btn.config(text="停止监控", bg='#e74c3c')
         self.trigger_btn.config(state='normal')
         
+        # 重置手动触发按钮状态
+        self.manual_trigger_active = False
+        self.trigger_btn.config(text="手动触发", bg='#3498db')
+        self.trigger_status_label.config(text="")
+        
         # 开始新的会话
         self.current_session_id = self.database.start_session(
             self.templates_dir, self.threshold_var.get(), self.monitor_var.get()
         )
+
+        # 重置所有计数器
+        self.reset_all_counts()
+        
+        # 重置费用筛选
+        self.selected_cost_filter = None
         
         self.log_message("开始监控...")
         self.log_message(f"会话ID: {self.current_session_id}")
@@ -429,9 +444,13 @@ class TFTStatsGUI:
         self.start_stop_btn.config(text="开始监控", bg='#27ae60')
         self.trigger_btn.config(state='disabled')
         
+        # 停止手动触发模式（如果正在运行）
+        if self.manual_trigger_active:
+            self.stop_manual_trigger_mode()
+        
         # 停止键盘监听器
         self.stop_keyboard_listener()
-        
+
         # 结束会话
         if self.current_session_id:
             self.database.end_session(self.current_session_id)
@@ -439,6 +458,12 @@ class TFTStatsGUI:
             self.log_message("📊 最终统计结果")
             self.log_message("="*30)
             self.print_session_summary()
+            
+            # 自动保存记录到log文件夹
+            try:
+                self.auto_save_records_on_stop()
+            except Exception as e:
+                self.log_message(f"⚠️ 自动保存记录失败: {e}")
         
         self.log_message("停止监控")
     
@@ -575,23 +600,118 @@ class TFTStatsGUI:
             self.log_message(f"停止键盘监听器错误: {e}")
     
     def manual_trigger(self):
-        """手动触发匹配"""
+        """手动触发匹配 - 切换按下/释放状态"""
         if not self.is_running:
             messagebox.showwarning("警告", "请先开始监控")
             return
         
         try:
+            if not self.manual_trigger_active:
+                # 激活手动触发模式
+                self.start_manual_trigger_mode()
+            else:
+                # 停止手动触发模式
+                self.stop_manual_trigger_mode()
+                
+        except Exception as e:
+            self.log_message(f"手动触发错误: {e}")
+            messagebox.showerror("错误", f"手动触发失败: {e}")
+    
+    def start_manual_trigger_mode(self):
+        """启动手动触发模式"""
+        try:
+            self.manual_trigger_active = True
+            self.trigger_btn.config(text="停止触发", bg='#e74c3c')
+            self.trigger_status_label.config(text="🟢 监听中 (按D键触发)")
+            
+            self.log_message("🟢 手动触发模式已启动")
+            self.log_message("现在按D键将自动触发截图匹配")
+            self.log_message("再次点击按钮可停止监听")
+            
+            # 启动手动触发监听线程
+            self.manual_trigger_thread = threading.Thread(target=self.manual_trigger_listener_loop, daemon=True)
+            self.manual_trigger_thread.start()
+            
+        except Exception as e:
+            self.log_message(f"启动手动触发模式错误: {e}")
+            self.manual_trigger_active = False
+    
+    def stop_manual_trigger_mode(self):
+        """停止手动触发模式"""
+        try:
+            self.manual_trigger_active = False
+            self.trigger_btn.config(text="手动触发", bg='#3498db')
+            self.trigger_status_label.config(text="")
+            
+            # 设置事件以停止监听线程
+            self.manual_trigger_event.set()
+            
+            self.log_message("🔴 手动触发模式已停止")
+            
+        except Exception as e:
+            self.log_message(f"停止手动触发模式错误: {e}")
+    
+    def manual_trigger_listener_loop(self):
+        """手动触发监听循环"""
+        try:
+            from pynput import keyboard
+            
+            def on_key_press(key):
+                """键盘按键回调函数"""
+                try:
+                    # D 触发截图和匹配
+                    if key == keyboard.KeyCode.from_char('d'):
+                        if self.manual_trigger_active:
+                            self.log_message("检测到D键，执行匹配...")
+                            self.execute_single_trigger()
+                            
+                except AttributeError:
+                    pass
+            
+            def on_key_release(key):
+                """键盘释放回调函数"""
+                pass
+            
+            # 启动键盘监听器
+            keyboard_listener = keyboard.Listener(
+                on_press=on_key_press,
+                on_release=on_key_release
+            )
+            keyboard_listener.start()
+            
+            self.log_message("✅ 手动触发键盘监听器已启动")
+            
+            # 等待停止信号
+            while self.manual_trigger_active:
+                if self.manual_trigger_event.wait(timeout=0.1):
+                    break
+                time.sleep(0.01)
+            
+            # 停止键盘监听器
+            keyboard_listener.stop()
+            self.log_message("手动触发键盘监听器已停止")
+            
+        except ImportError:
+            self.log_message("⚠️ pynput未安装，无法使用键盘监听功能")
+            self.log_message("请安装: pip install pynput")
+            self.stop_manual_trigger_mode()
+        except Exception as e:
+            self.log_message(f"⚠️ 手动触发监听器错误: {e}")
+            self.stop_manual_trigger_mode()
+    
+    def execute_single_trigger(self):
+        """执行单次触发匹配"""
+        try:
             self.trigger_count += 1
             self.trigger_count_label.config(text=str(self.trigger_count))
             
-            self.log_message(f"手动触发 #{self.trigger_count}")
+            self.log_message(f"🔄 手动触发 #{self.trigger_count}")
             
             # 执行匹配
             self.perform_matching()
             
         except Exception as e:
-            self.log_message(f"手动触发错误: {e}")
-            messagebox.showerror("错误", f"手动触发失败: {e}")
+            self.log_message(f"执行单次触发错误: {e}")
     
     def perform_matching(self):
         """执行模板匹配"""
@@ -605,11 +725,44 @@ class TFTStatsGUI:
                 (1721, 1240, 250, 185),  # 区域5
             ]
             
+            # OCR识别区域
+            ocr_region = (360, 1173, 27, 36)
+            
             templates = load_templates_from_dir(self.templates_dir)
             all_matches = []
+            ocr_number = None
+            ocr_confidence = None
+            
+            # 执行OCR识别（如果启用）
+            if self.ocr_var.get() and self.ocr:
+                try:
+                    full_screen = grab_fullscreen(monitor_index=self.monitor_var.get())
+                    ocr_number = self.ocr.recognize_number_from_region(full_screen, ocr_region)
+                    ocr_confidence = 0.9  # 默认置信度
+                    self.log_message(f"🔍 OCR识别结果: Level {ocr_number}")
+                except Exception as e:
+                    self.log_message(f"⚠️ OCR识别失败: {e}")
+                    # 使用OCR回退值
+                    try:
+                        ocr_number = self.ocr._get_fallback_number()
+                        ocr_confidence = 0.5
+                        self.log_message(f"使用OCR回退值: Level {ocr_number}")
+                    except:
+                        ocr_number = 1
+                        ocr_confidence = 0.3
+                        self.log_message("使用默认Level值: 1")
+            
+            self.log_message(f"开始匹配 {len(templates)} 个模板...")
+            
+            # 准备匹配数据，使用与main函数相同的格式
+            matches_data = []
+            match_details = []
             
             for i, (x, y, w, h) in enumerate(fixed_regions):
                 region_img = grab_region((x, y, w, h), monitor_index=self.monitor_var.get())
+                region_matched = False
+                region_templates = []
+                region_detail = {}
                 
                 for name, tmpl in templates:
                     res = match_template(region_img, tmpl, threshold=self.threshold_var.get())
@@ -617,25 +770,19 @@ class TFTStatsGUI:
                         # 解析卡牌信息
                         unit_name, cost = self.parse_card_name(name)
                         
-                        # 添加到表格
-                        self.add_to_table(i+1, unit_name, cost, f"{res['score']:.3f}", "", 
-                                        datetime.now().strftime("%H:%M:%S"))
+                        # 记录匹配详情
+                        if 'score' not in region_detail or res['score'] > region_detail.get('score', 0):
+                            region_detail = {
+                                'score': res['score'],
+                                'bbox': {
+                                    'top_left': res['top_left'],
+                                    'bottom_right': res['bottom_right'],
+                                    'center': res['center']
+                                }
+                            }
                         
-                        # 记录到数据库
-                        if self.current_session_id:
-                            self.database.record_match(
-                                session_id=self.current_session_id,
-                                capture_time=datetime.now(),
-                                capture_sequence=self.trigger_count,
-                                region_number=i+1,
-                                template_name=name,
-                                unit_name=unit_name,
-                                cost=cost,
-                                match_score=res['score'],
-                                match_bbox=json.dumps(res['bbox']),
-                                ocr_number=None,
-                                ocr_confidence=None
-                            )
+                        region_templates.append(name)
+                        region_matched = True
                         
                         all_matches.append({
                             'region': i+1,
@@ -643,16 +790,48 @@ class TFTStatsGUI:
                             'cost': cost,
                             'score': res['score']
                         })
-                        
-                        break  # 只记录最佳匹配
+                
+                if region_matched:
+                    matches_data.append((i+1, region_templates))
+                    # 添加OCR信息到匹配详情
+                    region_detail['ocr_number'] = ocr_number
+                    region_detail['ocr_confidence'] = ocr_confidence
+                    match_details.append(region_detail)
+                else:
+                    self.log_message(f"⚠️ 区域{i+1}: 未匹配到任何模板")
+                    match_details.append({})
             
-            self.log_message(f"匹配完成，找到 {len(all_matches)} 个匹配")
+            # 记录到数据库，使用与main函数相同的方法
+            if self.current_session_id and matches_data:
+                try:
+                    self.database.record_matches(self.current_session_id, matches_data, match_details)
+                    self.log_message(f"✅ 数据库记录成功，记录了 {len(matches_data)} 个区域的匹配结果")
+                except Exception as db_error:
+                    self.log_message(f"❌ 数据库记录失败: {db_error}")
+            
+            # 更新Level计数
+            if ocr_number and ocr_number >= 2 and ocr_number <= 10:
+                current_count = int(self.count_labels[ocr_number]['text'])
+                self.count_labels[ocr_number].config(text=str(current_count + 1))
+                self.log_message(f"📊 Level {ocr_number} 计数更新: {current_count} → {current_count + 1}")
+                # 从数据库获取最新的capture_sequence值并更新触发次数
+                self.update_trigger_count_from_database()  
+            
+            self.log_message(f"🎯 匹配完成，找到 {len(all_matches)} 个匹配")
+            
+            # 显示匹配结果摘要
+            if all_matches:
+                self.log_message("匹配结果摘要:")
+                for match in all_matches:
+                    self.log_message(f"  区域{match['region']}: {match['name']} (费用{match['cost']})")
             
             # 更新图表
             self.update_charts()
             
         except Exception as e:
-            self.log_message(f"匹配错误: {e}")
+            self.log_message(f"❌ 匹配错误: {e}")
+            import traceback
+            self.log_message(f"错误详情: {traceback.format_exc()}")
     
     def parse_card_name(self, template_name):
         """解析卡牌名称，提取单位名称和费用"""
@@ -667,16 +846,6 @@ class TFTStatsGUI:
                 return template_name, 0
         except:
             return template_name, 0
-    
-    def add_to_table(self, region, name, cost, score, ocr, time):
-        """添加数据到表格（已弃用，现在使用Level统计表格）"""
-        # 这个方法现在不再使用，但保留以避免错误
-        self.log_message(f"匹配结果: 区域{region} - {name} (费用{cost}) - 分数{score}")
-        
-        # 可以根据费用更新对应的Level计数
-        if cost >= 2 and cost <= 10:
-            current_count = int(self.count_labels[cost]['text'])
-            self.count_labels[cost].config(text=str(current_count + 1))
     
     def update_charts(self):
         """更新图表"""
@@ -740,15 +909,32 @@ class TFTStatsGUI:
 
             # 定义不同cost值的颜色映射
             cost_colors = {
-                1: '#677380',    # 红色 - 1费
-                2: '#069926',    # 橙色 - 2费
-                3: '#09529c',    # 黄色 - 3费
-                4: '#b70cc2',    # 绿色 - 4费
-                5: '#c77712',    # 蓝色 - 5费
+                1: '#677380',    # 1费
+                2: '#069926',    # 2费
+                3: '#09529c',    # 3费
+                4: '#b70cc2',    # 4费
+                5: '#c77712',    # 5费
             }
             
-            # 为每个条形设置对应的颜色
-            colors = [cost_colors.get(cost, '#95a5a6') for cost in costs]
+            # 如果选择了特定费用筛选，只显示该费用的数据
+            if hasattr(self, 'selected_cost_filter') and self.selected_cost_filter is not None:
+                filtered_data = [(name, count, cost) for name, count, cost in zip(unit_name, counts, costs) 
+                               if cost == self.selected_cost_filter]
+                if filtered_data:
+                    unit_name = [item[0] for item in filtered_data]
+                    counts = [item[1] for item in filtered_data]
+                    costs = [item[2] for item in filtered_data]
+                    colors = [cost_colors.get(cost, '#95a5a6') for cost in costs]
+                else:
+                    # 如果没有数据，显示"无数据"信息
+                    self.ax_line.text(0.5, 0.5, f'费用 {self.selected_cost_filter} 无数据', 
+                                    ha='center', va='center', transform=self.ax_line.transAxes, 
+                                    color='white', fontsize=12)
+                    self.canvas_line.draw()
+                    return
+            else:
+                # 为每个条形设置对应的颜色
+                colors = [cost_colors.get(cost, '#95a5a6') for cost in costs]
             
             # 创建条形图
             bars = self.ax_line.bar(unit_name, counts, color=colors, alpha=0.8, edgecolor='white', linewidth=1)
@@ -760,21 +946,69 @@ class TFTStatsGUI:
             self.ax_line.tick_params(axis='x', rotation=45)
             self.ax_line.grid(True, alpha=0.2, color='white', axis='y')
             
-            # 添加图例
-            # legend_elements = []
-            # for cost in sorted(set(costs)):
-            #     if cost in cost_colors:
-            #         legend_elements.append(plt.Rectangle((0,0),1,1, facecolor=cost_colors[cost], 
-            #                                           edgecolor='white', linewidth=1, label=f'{cost} Cost'))
-            
-            # self.ax_line.legend(handles=legend_elements, loc='upper right', 
-            #                   facecolor='#34495e', edgecolor='white', 
-            #                   labelcolor='white', framealpha=0.8)
+            # 创建可点击的图例按钮
+            self.create_clickable_legend(cost_colors, costs)
             
             self.canvas_line.draw()
 
         except Exception as e:
             self.log_message(f"折线图更新错误: {e}")
+    
+    def create_clickable_legend(self, cost_colors, costs):
+        """创建可点击的费用图例按钮"""
+        try:
+            # 清除之前的图例按钮（如果存在）
+            if hasattr(self, 'legend_frame'):
+                self.legend_frame.destroy()
+            
+            # 创建图例容器
+            self.legend_frame = tk.Frame(self.root, bg='#34495e', relief='raised', bd=1)
+            self.legend_frame.place(relx=0.98, rely=0.33, anchor='ne')
+            
+            # 创建费用按钮
+            self.cost_buttons = {}
+            for cost in sorted(set(costs)):
+                if cost in cost_colors:
+                    # 创建按钮
+                    btn = tk.Button(self.legend_frame, text=f"{cost}Cost", 
+                                  font=('Arial', 9, 'bold'), width=6, height=1,
+                                  bg=cost_colors[cost], fg='white', 
+                                  command=lambda c=cost: self.on_cost_button_click(c))
+                    btn.pack(side='left', pady=1, padx=2)
+                    self.cost_buttons[cost] = btn
+                    
+                    # 如果当前选中了该费用，高亮显示
+                    if self.selected_cost_filter == cost:
+                        btn.config(relief='sunken', bd=3)
+                
+        except Exception as e:
+            self.log_message(f"创建图例按钮错误: {e}")
+    
+    def on_cost_button_click(self, cost):
+        """处理费用按钮点击事件"""
+        try:
+            # 更新选中的费用筛选
+            if self.selected_cost_filter == cost:
+                # 如果点击的是已选中的按钮，则取消选择
+                self.selected_cost_filter = None
+                self.cost_buttons[cost].config(relief='raised', bd=1)
+                self.log_message(f"取消费用 {cost} 筛选")
+            else:
+                # 选择新的费用值
+                # 恢复所有按钮的默认样式
+                for btn_cost, btn in self.cost_buttons.items():
+                    btn.config(relief='raised', bd=1)
+                
+                # 设置选中按钮的高亮样式
+                self.selected_cost_filter = cost
+                self.cost_buttons[cost].config(relief='sunken', bd=3)
+                self.log_message(f"选择费用 {cost} 进行数据筛选")
+            
+            # 更新图表显示
+            self.update_charts()
+            
+        except Exception as e:
+            self.log_message(f"费用按钮点击错误: {e}")
     
     def get_cost_distribution(self):
         """获取费用分布数据"""
@@ -785,24 +1019,37 @@ class TFTStatsGUI:
             conn = sqlite3.connect(self.database.db_path)
             cursor = conn.cursor()
             
-            if self.selected_level is not None:
-                # 如果选择了特定Level，只显示该Level的数据
-                cursor.execute('''
-                    SELECT cost, SUM(total_matches) as count
-                    FROM template_stats 
-                    WHERE ocr_number = ?
-                    GROUP BY cost
-                    ORDER BY cost
-                ''', (self.selected_level,))
-            else:
-                # 显示所有Level的数据
-                cursor.execute('''
-                    SELECT cost, SUM(total_matches) as count
-                    FROM template_stats 
-                    GROUP BY cost
-                    ORDER BY cost
-                ''')
+            # 构建查询条件
+            where_conditions = []
+            params = []
             
+            if self.selected_level is not None:
+                where_conditions.append("ocr_number = ?")
+                params.append(self.selected_level)
+            
+            if self.selected_cost_filter is not None:
+                where_conditions.append("cost = ?")
+                params.append(self.selected_cost_filter)
+            
+            # 构建SQL查询
+            if where_conditions:
+                where_clause = " AND ".join(where_conditions)
+                sql = f'''
+                    SELECT cost, SUM(total_matches) as count
+                    FROM template_stats 
+                    WHERE {where_clause}
+                    GROUP BY cost
+                    ORDER BY cost
+                '''
+            else:
+                sql = '''
+                    SELECT cost, SUM(total_matches) as count
+                    FROM template_stats 
+                    GROUP BY cost
+                    ORDER BY cost
+                '''
+            
+            cursor.execute(sql, params)
             result = dict(cursor.fetchall())
             conn.close()
             
@@ -821,24 +1068,37 @@ class TFTStatsGUI:
             conn = sqlite3.connect(self.database.db_path)
             cursor = conn.cursor()
             
-            if self.selected_level is not None:
-                # 如果选择了特定Level，只显示该Level的数据
-                cursor.execute('''
-                    SELECT unit_name, total_matches, cost
-                    FROM template_stats 
-                    WHERE ocr_number = ?
-                    GROUP BY unit_name
-                    ORDER BY cost ASC
-                ''', (self.selected_level,))
-            else:
-                # 显示所有Level的数据
-                cursor.execute('''
-                    SELECT unit_name, total_matches, cost
-                    FROM template_stats 
-                    GROUP BY unit_name
-                    ORDER BY cost ASC
-                ''')
+            # 构建查询条件
+            where_conditions = []
+            params = []
             
+            if self.selected_level is not None:
+                where_conditions.append("ocr_number = ?")
+                params.append(self.selected_level)
+            
+            if self.selected_cost_filter is not None:
+                where_conditions.append("cost = ?")
+                params.append(self.selected_cost_filter)
+            
+            # 构建SQL查询
+            if where_conditions:
+                where_clause = " AND ".join(where_conditions)
+                sql = f'''
+                    SELECT unit_name, total_matches, cost
+                    FROM template_stats 
+                    WHERE {where_clause}
+                    GROUP BY unit_name
+                    ORDER BY cost ASC
+                '''
+            else:
+                sql = '''
+                    SELECT unit_name, total_matches, cost
+                    FROM template_stats 
+                    GROUP BY unit_name
+                    ORDER BY cost ASC
+                '''
+            
+            cursor.execute(sql, params)
             result = cursor.fetchall()
             conn.close()
             
@@ -866,71 +1126,189 @@ class TFTStatsGUI:
             messagebox.showerror("错误", f"保存失败: {e}")
     
     def export_to_csv(self, filename):
-        """导出数据到CSV"""
+        """导出数据到CSV - 使用新的导出格式"""
         try:
             if not self.current_session_id:
+                self.log_message("⚠️ 没有活动会话，无法导出数据")
                 return
             
             conn = sqlite3.connect(self.database.db_path)
             cursor = conn.cursor()
             
-            cursor.execute('''
-                SELECT 
-                    capture_time,
-                    region_number,
-                    unit_name,
-                    cost,
-                    match_score,
-                    ocr_number
-                FROM matches 
-                WHERE session_id = ?
-                ORDER BY capture_time
-            ''', (self.current_session_id,))
+            try:
+                # 查询matches表的指定字段
+                cursor.execute('''
+                    SELECT capture_sequence, unit_name, cost, ocr_number
+                    FROM matches
+                    ORDER BY capture_sequence, unit_name
+                ''')
+                matches_data = cursor.fetchall()
+    
+                # 查询template_stats表的指定字段
+                cursor.execute('''
+                    SELECT id, unit_name, cost, ocr_number, total_matches
+                    FROM template_stats
+                    ORDER BY id
+                ''')
+                template_stats_data = cursor.fetchall()
             
-            data = cursor.fetchall()
-            conn.close()
+                conn.close()
             
-            import csv
-            with open(filename, 'w', newline='', encoding='utf-8') as csvfile:
-                writer = csv.writer(csvfile)
-                writer.writerow(['时间', '区域', '卡牌名称', '费用', '匹配分数', 'OCR数字'])
-                writer.writerows(data)
+                # 写入CSV文件
+                with open(filename, 'w', newline='', encoding='utf-8') as csvfile:
+                    import csv
+                    writer = csv.writer(csvfile)
                 
+                    # 写入matches表数据
+                    writer.writerow(['=== MATCHES TABLE ==='])
+                    writer.writerow(['capture_sequence', 'unit_name', 'cost', 'ocr_number'])
+                    for row in matches_data:
+                        writer.writerow(row)
+                
+                    # 写入空行分隔
+                    writer.writerow([])
+                
+                    # 写入template_stats表数据
+                    writer.writerow(['=== TEMPLATE_STATS TABLE ==='])
+                    writer.writerow(['id', 'unit_name', 'cost', 'ocr_number', 'total_matches'])
+                    for row in template_stats_data:
+                        writer.writerow(row)
+            
+                    print(f"✅ 新CSV格式数据已导出到: {filename}")
+                    print(f"  - matches表: {len(matches_data)} 条记录")
+                    print(f"  - template_stats表: {len(template_stats_data)} 条记录")
+            
+            # except Exception as e:
+            #     print(f"❌ 导出失败: {e}")
+            #     import traceback
+            #     traceback.print_exc()
+            finally:
+                if conn:
+                    conn.close()
+
         except Exception as e:
-            self.log_message(f"导出CSV错误: {e}")
+            self.log_message(f"❌ 导出CSV错误: {e}")
+            raise
+    
+    def auto_save_records_on_stop(self):
+        """停止监控时自动保存记录到log文件夹"""
+        try:
+            # 创建log文件夹（如果不存在）
+            log_dir = "log"
+            if not os.path.exists(log_dir):
+                os.makedirs(log_dir)
+                self.log_message(f"📁 创建log文件夹: {log_dir}")
+            
+            # 生成文件名：yyyy-mm-dd-hh-mm-ss.csv
+            timestamp = datetime.now().strftime('%Y-%m-%d-%H-%M-%S')
+            filename = os.path.join(log_dir, f"{timestamp}.csv")
+            
+            # 导出数据到CSV
+            self.export_to_csv(filename)
+            
+            self.log_message(f"✅ 自动保存记录成功: {filename}")
+            self.log_message(f"📊 数据已保存到log文件夹")
+            
+        except Exception as e:
+            self.log_message(f"❌ 自动保存记录失败: {e}")
             raise
     
     def share_data(self):
-        """分享数据"""
+        """保存当前程序窗口截图到剪贴板"""
         try:
-            # 创建分享数据
-            share_data = {
-                'session_id': self.current_session_id,
-                'trigger_count': self.trigger_count,
-                'start_time': datetime.now().isoformat(),
-                'settings': {
-                    'threshold': self.threshold_var.get(),
-                    'monitor_index': self.monitor_var.get(),
-                    'enable_ocr': self.ocr_var.get()
-                }
-            }
+            # 获取当前窗口位置和大小
+            x = self.root.winfo_x()
+            y = self.root.winfo_y()
+            width = self.root.winfo_width()
+            height = self.root.winfo_height()
             
-            # 保存分享文件
-            filename = filedialog.asksaveasfilename(
-                defaultextension=".json",
-                filetypes=[("JSON files", "*.json"), ("All files", "*.*")]
-            )
+            # 截取当前窗口区域
+            from PIL import ImageGrab
+            import io
             
-            if filename:
-                with open(filename, 'w', encoding='utf-8') as f:
-                    json.dump(share_data, f, ensure_ascii=False, indent=2)
+            # 截取指定区域（窗口位置）
+            screenshot = ImageGrab.grab(bbox=(x, y, x + width, y + height))
+            
+            # 尝试将图片直接复制到剪贴板
+            try:
+                # 方法1: 使用PIL的clipboard功能（如果可用）
+                try:
+                    screenshot.save("temp_screenshot.png")
+                    self.log_message("✅ 窗口截图已保存为临时文件")
+                    
+                    # 方法2: 使用系统剪贴板API
+                    import win32clipboard
+                    from PIL import Image
+                    
+                    # 将图片转换为BMP格式
+                    output = io.BytesIO()
+                    screenshot.convert('RGB').save(output, 'BMP')
+                    data = output.getvalue()[14:]  # 去掉BMP文件头
+                    output.close()
+                    
+                    # 复制到剪贴板
+                    win32clipboard.OpenClipboard()
+                    win32clipboard.EmptyClipboard()
+                    win32clipboard.SetClipboardData(win32clipboard.CF_DIB, data)
+                    win32clipboard.CloseClipboard()
+                    
+                    self.log_message(f"✅ 窗口截图已复制到剪贴板")
+                    self.log_message(f"  窗口位置: ({x}, {y})")
+                    self.log_message(f"  窗口大小: {width} x {height}")
+                    messagebox.showinfo("成功", "窗口截图已复制到剪贴板！\n现在可以在其他应用程序中粘贴使用。")
+                    
+                except ImportError:
+                    # 如果没有win32clipboard，尝试使用其他方法
+                    try:
+                        import pyperclip
+                        # 将图片转换为base64编码
+                        import base64
+                        output = io.BytesIO()
+                        screenshot.save(output, 'PNG')
+                        img_data = output.getvalue()
+                        output.close()
+                        
+                        # 创建HTML格式的剪贴板数据
+                        html_data = f'<img src="data:image/png;base64,{base64.b64encode(img_data).decode()}">'
+                        
+                        # 复制到剪贴板
+                        pyperclip.copy(html_data)
+                        
+                        self.log_message(f"✅ 窗口截图已复制到剪贴板（HTML格式）")
+                        self.log_message(f"  窗口位置: ({x}, {y})")
+                        self.log_message(f"  窗口大小: {width} x {height}")
+                        messagebox.showinfo("成功", "窗口截图已复制到剪贴板！\n现在可以在支持HTML的应用程序中粘贴使用。")
+                        
+                    except ImportError:
+                        # 最后的回退方案：保存文件并提示用户
+                        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                        filename = f"screenshot_{timestamp}.png"
+                        screenshot.save(filename)
+                        
+                        self.log_message(f"✅ 窗口截图已保存为文件: {filename}")
+                        self.log_message(f"  窗口位置: ({x}, {y})")
+                        self.log_message(f"  窗口大小: {width} x {height}")
+                        self.log_message(f"  ⚠️ 无法复制到剪贴板，请手动复制文件")
+                        messagebox.showinfo("成功", f"窗口截图已保存！\n文件名: {filename}\n请手动复制此文件。")
+                        
+            except Exception as clipboard_error:
+                # 如果剪贴板操作失败，保存文件
+                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                filename = f"screenshot_{timestamp}.png"
+                screenshot.save(filename)
                 
-                self.log_message(f"分享数据已保存到: {filename}")
-                messagebox.showinfo("成功", "分享数据保存成功！")
-                
+                self.log_message(f"✅ 窗口截图已保存为文件: {filename}")
+                self.log_message(f"  窗口位置: ({x}, {y})")
+                self.log_message(f"  窗口大小: {width} x {height}")
+                self.log_message(f"  ⚠️ 剪贴板复制失败: {clipboard_error}")
+                messagebox.showinfo("成功", f"窗口截图已保存！\n文件名: {filename}\n剪贴板复制失败，请手动复制文件。")
+            
+        except ImportError:
+            self.log_message("❌ 缺少PIL库，无法截图")
+            messagebox.showerror("错误", "请安装PIL库: pip install Pillow")
         except Exception as e:
-            self.log_message(f"分享数据错误: {e}")
-            messagebox.showerror("错误", f"分享失败: {e}")
+            self.log_message(f"❌ 截图失败: {e}")
+            messagebox.showerror("错误", f"截图失败: {e}")
     
     def clear_table(self):
         """清空统计表格"""

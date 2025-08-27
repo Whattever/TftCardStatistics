@@ -29,8 +29,8 @@ class TFTStatsDatabase:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
             
-            # 调试模式：清空现有数据库
-            # print("🧹 调试模式：清空现有数据库...")
+            # 清空现有数据库
+            # print("🧹 清空现有数据库...")
             # cursor.execute('DROP TABLE IF EXISTS matches')
             # cursor.execute('DROP TABLE IF EXISTS template_stats')
             # cursor.execute('DROP TABLE IF EXISTS sessions')
