@@ -30,11 +30,11 @@ class TFTStatsDatabase:
             cursor = conn.cursor()
             
             # 调试模式：清空现有数据库
-            print("🧹 调试模式：清空现有数据库...")
-            cursor.execute('DROP TABLE IF EXISTS matches')
-            cursor.execute('DROP TABLE IF EXISTS template_stats')
-            cursor.execute('DROP TABLE IF EXISTS sessions')
-            print("✅ 数据库已清空")
+            # print("🧹 调试模式：清空现有数据库...")
+            # cursor.execute('DROP TABLE IF EXISTS matches')
+            # cursor.execute('DROP TABLE IF EXISTS template_stats')
+            # cursor.execute('DROP TABLE IF EXISTS sessions')
+            # print("✅ 数据库已清空")
             
             # 创建会话表 - 记录每次运行程序的信息
             cursor.execute('''
@@ -521,8 +521,34 @@ class TFTStatsDatabase:
             for template, unit_name, cost, last_seen, total_matches in stats['recent_activity']:
                 print(f"  {template} (费用{cost}: {unit_name}): Last matched {last_seen}, Total {total_matches} times")
     
+    def get_latest_capture_sequence(self) -> int:
+        """获取数据库中最新的capture_sequence值
+        
+        Returns:
+            int: 最新的capture_sequence值，如果没有记录则返回0
+        """
+        try:
+            with self.lock:
+                conn = sqlite3.connect(self.db_path)
+                cursor = conn.cursor()
+                
+                # 查询最新的capture_sequence值
+                cursor.execute('''
+                    SELECT MAX(capture_sequence) FROM matches
+                ''')
+                
+                result = cursor.fetchone()
+                conn.close()
+                
+                if result and result[0] is not None:
+                    return result[0]
+                else:
+                    return 0
+                    
+        except Exception as e:
+            print(f"⚠️ 获取最新capture_sequence时出错: {e}")
+            return 0
 
-    
     def _get_connection(self):
         """获取数据库连接（内部使用）"""
         return sqlite3.connect(self.db_path)
