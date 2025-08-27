@@ -132,7 +132,7 @@ dmypy.json
 # Database files (keep only the main one)
 tft_stats*.db
 *.db
-!tft_stats.db
+# !tft_stats.db
 
 # Test and debug files
 test_*.py
@@ -151,6 +151,7 @@ demo_*.py
 
 # Log files
 *.log
+log/
 
 # Screenshots and captured images (if any)
 screenshots/
