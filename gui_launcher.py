@@ -101,6 +101,10 @@ class TFTStatsGUI:
                 with open(config_path, 'r', encoding='utf-8') as f:
                     config = json.load(f)
                 print("✅ 配置文件加载成功")
+                
+                # 自动适配屏幕分辨率
+                config = self.adapt_resolution(config)
+                
                 return config
             else:
                 print("⚠️ 配置文件不存在，使用默认配置")
@@ -110,6 +114,64 @@ class TFTStatsGUI:
             print("使用默认配置")
             return self.get_default_config()
     
+    def adapt_resolution(self, config):
+        """自动适配屏幕分辨率"""
+        try:
+            # 获取当前屏幕分辨率
+            import tkinter as tk
+            root = tk.Tk()
+            current_width = root.winfo_screenwidth()
+            current_height = root.winfo_screenheight()
+            root.destroy()
+            
+            # 获取基准分辨率
+            base_width = config.get("matching_settings", {}).get("base_resolution", {}).get("width", 2560)
+            base_height = config.get("matching_settings", {}).get("base_resolution", {}).get("height", 1440)
+            
+            # 计算缩放比例
+            scale_x = current_width / base_width
+            scale_y = current_height / base_height
+            
+            print(f"🖥️ 当前屏幕分辨率: {current_width}x{current_height}")
+            print(f"📏 基准分辨率: {base_width}x{base_height}")
+            print(f"📐 缩放比例: X={scale_x:.3f}, Y={scale_y:.3f}")
+            
+            # 更新fixed_regions坐标
+            if "fixed_regions" in config["matching_settings"]:
+                for region in config["matching_settings"]["fixed_regions"]:
+                    if "relative_coordinates" in region:
+                        rel_x, rel_y, rel_w, rel_h = region["relative_coordinates"]
+                        # 使用相对坐标计算新坐标
+                        new_x = int(rel_x * current_width)
+                        new_y = int(rel_y * current_height)
+                        new_w = int(rel_w * current_width)
+                        new_h = int(rel_h * current_height)
+                        
+                        region["coordinates"] = [new_x, new_y, new_w, new_h]
+                        print(f"📍 {region['name']}: {region['coordinates']}")
+            
+            # 更新ocr_regions坐标
+            if "ocr_regions" in config["matching_settings"]:
+                for region_name, region in config["matching_settings"]["ocr_regions"].items():
+                    if "relative_coordinates" in region:
+                        rel_x, rel_y, rel_w, rel_h = region["relative_coordinates"]
+                        # 使用相对坐标计算新坐标
+                        new_x = int(rel_x * current_width)
+                        new_y = int(rel_y * current_height)
+                        new_w = int(rel_w * current_width)
+                        new_h = int(rel_h * current_height)
+                        
+                        region["coordinates"] = [new_x, new_y, new_w, new_h]
+                        print(f"🔍 {region['name']}: {region['coordinates']}")
+            
+            print("✅ 屏幕分辨率适配完成")
+            return config
+            
+        except Exception as e:
+            print(f"⚠️ 屏幕分辨率适配失败: {e}")
+            print("使用原始配置")
+            return config
+    
     def get_default_config(self):
         """获取默认配置"""
         return {
@@ -117,16 +179,20 @@ class TFTStatsGUI:
                 "threshold": 0.68,
                 "monitor_index": 1,
                 "enable_ocr": True,
+                "base_resolution": {
+                    "width": 2560,
+                    "height": 1440
+                },
                 "fixed_regions": [
-                    {"id": 1, "name": "区域1", "coordinates": [645, 1240, 250, 185]},
-                    {"id": 2, "name": "区域2", "coordinates": [914, 1240, 250, 185]},
-                    {"id": 3, "name": "区域3", "coordinates": [1183, 1240, 250, 185]},
-                    {"id": 4, "name": "区域4", "coordinates": [1452, 1240, 250, 185]},
-                    {"id": 5, "name": "区域5", "coordinates": [1721, 1240, 250, 185]}
+                    {"id": 1, "name": "区域1", "coordinates": [645, 1240, 250, 185], "relative_coordinates": [0.252, 0.861, 0.098, 0.128]},
+                    {"id": 2, "name": "区域2", "coordinates": [914, 1240, 250, 185], "relative_coordinates": [0.357, 0.861, 0.098, 0.128]},
+                    {"id": 3, "name": "区域3", "coordinates": [1183, 1240, 250, 185], "relative_coordinates": [0.462, 0.861, 0.098, 0.128]},
+                    {"id": 4, "name": "区域4", "coordinates": [1452, 1240, 250, 185], "relative_coordinates": [0.567, 0.861, 0.098, 0.128]},
+                    {"id": 5, "name": "区域5", "coordinates": [1721, 1240, 250, 185], "relative_coordinates": [0.672, 0.861, 0.098, 0.128]}
                 ],
                 "ocr_regions": {
-                    "level_detection": {"name": "Level检测区域", "coordinates": [360, 1173, 27, 36]},
-                    "stage_detection": {"name": "Stage检测区域", "coordinates": [1023, 10, 127, 35]}
+                    "level_detection": {"name": "Level检测区域", "coordinates": [360, 1173, 27, 36], "relative_coordinates": [0.141, 0.814, 0.011, 0.025]},
+                    "stage_detection": {"name": "Stage检测区域", "coordinates": [1023, 10, 127, 35], "relative_coordinates": [0.400, 0.007, 0.050, 0.024]}
                 }
             },
             "auto_identification": {
@@ -1232,7 +1298,7 @@ class TFTStatsGUI:
             if where_conditions:
                 where_clause = " AND ".join(where_conditions)
                 sql = f'''
-                    SELECT unit_name, total_matches, cost
+                    SELECT unit_name, SUM(total_matches) as total_matches, cost
                     FROM template_stats 
                     WHERE {where_clause}
                     GROUP BY unit_name

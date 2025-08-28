@@ -3,41 +3,52 @@
     "threshold": 0.68,
     "monitor_index": 1,
     "enable_ocr": true,
+    "base_resolution": {
+      "width": 2560,
+      "height": 1440
+    },
     "fixed_regions": [
       {
         "id": 1,
         "name": "区域1",
-        "coordinates": [645, 1240, 250, 185]
+        "coordinates": [645, 1240, 250, 185],
+        "relative_coordinates": [0.252, 0.861, 0.098, 0.128]
       },
       {
         "id": 2,
-        "name": "区域2", 
-        "coordinates": [914, 1240, 250, 185]
+        "name": "区域2",
+        "coordinates": [914, 1240, 250, 185],
+        "relative_coordinates": [0.357, 0.861, 0.098, 0.128]
       },
       {
         "id": 3,
         "name": "区域3",
-        "coordinates": [1183, 1240, 250, 185]
+        "coordinates": [1183, 1240, 250, 185],
+        "relative_coordinates": [0.462, 0.861, 0.098, 0.128]
       },
       {
         "id": 4,
         "name": "区域4",
-        "coordinates": [1452, 1240, 250, 185]
+        "coordinates": [1452, 1240, 250, 185],
+        "relative_coordinates": [0.567, 0.861, 0.098, 0.128]
       },
       {
         "id": 5,
         "name": "区域5",
-        "coordinates": [1721, 1240, 250, 185]
+        "coordinates": [1721, 1240, 250, 185],
+        "relative_coordinates": [0.672, 0.861, 0.098, 0.128]
       }
     ],
     "ocr_regions": {
       "level_detection": {
         "name": "Level检测区域",
-        "coordinates": [360, 1173, 27, 36]
+        "coordinates": [360, 1173, 27, 36],
+        "relative_coordinates": [0.141, 0.814, 0.011, 0.025]
       },
       "stage_detection": {
-        "name": "Stage检测区域", 
-        "coordinates": [1023, 10, 127, 35]
+        "name": "Stage检测区域",
+        "coordinates": [1023, 10, 127, 35],
+        "relative_coordinates": [0.400, 0.007, 0.050, 0.024]
       }
     }
   },

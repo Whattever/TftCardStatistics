@@ -183,3 +183,5 @@ Thumbs.db
 
 # Windows specific
 *.lnk
+
+rebuild_exe.bat

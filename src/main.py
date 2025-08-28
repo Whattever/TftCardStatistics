@@ -9,10 +9,9 @@ from pynput import keyboard
 
 from .capture import grab_fullscreen, grab_region
 from .matching import (
-    load_template_bgr,
     match_template,
-    draw_match_bbox,
     load_templates_from_dir,
+    draw_match_bbox,
 )
 from .database import TFTStatsDatabase
 from .ocr_module import NumberOCR
@@ -237,43 +236,15 @@ def continuous_monitoring_mode(templates_dir="tft_units", monitor_index=1, thres
         print("Program exited")
 
 
-def parse_xywh(arg: str) -> Tuple[int, int, int, int]:
-    parts = [int(p) for p in arg.split(",")]
-    if len(parts) != 4:
-        raise argparse.ArgumentTypeError("xywh must be: x,y,w,h")
-    return parts[0], parts[1], parts[2], parts[3]
 
-
-def capture_and_display_regions(regions, monitor_index=1):
-    """截取并显示多个区域"""
-    captured_regions = []
-    
-    for i, (x, y, w, h) in enumerate(regions):
-        region_img = grab_region((x, y, w, h), monitor_index=monitor_index)
-        captured_regions.append((f"Region {i+1} ({x},{y},{w},{h})", region_img))
-    
-    # 显示所有截取的区域
-    for name, img in captured_regions:
-        cv2.imshow(name, img)
-        print(f"截取了 {name}")
-    
-    print("\n按任意键关闭所有窗口...")
-    cv2.waitKey(0)
-    cv2.destroyAllWindows()
-    
-    return captured_regions
 
 
 def main():
     parser = argparse.ArgumentParser(description="TFT Card Statistics - Fixed region capture and template match")
-    parser.add_argument("--template", required=False, help="Path to single template image")
     parser.add_argument("--templates_dir", required=False, default="tft_units", help="Directory containing multiple templates")
-    parser.add_argument("--region", type=parse_xywh, default=None, help="Target region as x,y,w,h on the primary monitor")
     parser.add_argument("--monitor", type=int, default=1, help="Monitor index for capture (1=primary)")
     parser.add_argument("--threshold", type=float, default=0.68, help="Match threshold (0-1)")
     parser.add_argument("--show", action="store_true", help="Show visualization window")
-    parser.add_argument("--test-capture", action="store_true", help="Test mode: capture all 5 fixed regions and display them")
-    parser.add_argument("--use-fixed-regions", action="store_true", help="Use the 5 predefined TFT card regions")
     parser.add_argument("--continuous", action="store_true", help="Continuous monitoring mode with hotkey triggers (D: capture, Ctrl+F1: exit)")
     parser.add_argument("--enable-stats", action="store_true", help="Enable statistics recording for non-continuous modes")
 
@@ -294,105 +265,67 @@ def main():
         )
         return
 
-    # 测试模式：截取并显示所有5个固定区域
-    if args.test_capture:
-        print("=== 截图测试模式 ===")
-        print("将截取以下5个固定区域:")
-        for i, (x, y, w, h) in enumerate(FIXED_REGIONS):
-            print(f"  区域{i+1}: x={x}, y={y}, w={w}, h={h}")
-        print()
+    # 使用固定的5个区域进行模板匹配
+    print("=== 使用固定区域模式 ===")
+    print("将截取5个固定区域进行模板匹配...")
+    
+    if not args.templates_dir:
+        raise SystemExit("请提供 --templates_dir 参数")
+    
+    print(f"使用模板目录: {args.templates_dir}")
+    
+    # 对每个固定区域进行模板匹配
+    all_matches = []
+    match_details = []  # 存储匹配详情，包括OCR结果
+    
+    # 初始化OCR识别器
+    ocr = None
+    try:
+        ocr = NumberOCR()
+        print("✅ OCR识别器初始化成功")
+    except Exception as e:
+        print(f"⚠️ OCR识别器初始化失败: {e}")
+        print("将禁用OCR功能")
+    
+    # 定义OCR识别区域 (360, 1173, 27, 36)
+    OCR_REGION = (360, 1173, 27, 36)
+    
+    for i, (x, y, w, h) in enumerate(FIXED_REGIONS):
+        print(f"\n--- 区域{i+1} ({x},{y},{w},{h}) ---")
+        region_img = grab_region((x, y, w, h), monitor_index=args.monitor)
         
-        capture_and_display_regions(FIXED_REGIONS, args.monitor)
-        return
-
-    # 确定截取区域
-    if args.use_fixed_regions:
-        # 使用固定的5个区域进行模板匹配
-        print("=== 使用固定区域模式 ===")
-        print("将截取5个固定区域进行模板匹配...")
+        region_detail = {}  # 存储当前区域的匹配详情
         
-        if not args.templates_dir and not args.template:
-            raise SystemExit("使用固定区域模式时，请提供 --template 或 --templates_dir 参数")
-        
-        # 如果templates_dir有值（包括默认值），优先使用多模板模式
-        if args.templates_dir:
-            print(f"使用模板目录: {args.templates_dir}")
-        elif args.template:
-            print(f"使用单模板: {args.template}")
-        
-        # 对每个固定区域进行模板匹配
-        all_matches = []
-        match_details = []  # 存储匹配详情，包括OCR结果
-        
-        # 初始化OCR识别器
-        ocr = None
-        try:
-            ocr = NumberOCR()
-            print("✅ OCR识别器初始化成功")
-        except Exception as e:
-            print(f"⚠️ OCR识别器初始化失败: {e}")
-            print("将禁用OCR功能")
-        
-        # 定义OCR识别区域 (360, 1173, 27, 36)
-        OCR_REGION = (360, 1173, 27, 36)
-        
-        for i, (x, y, w, h) in enumerate(FIXED_REGIONS):
-            print(f"\n--- 区域{i+1} ({x},{y},{w},{h}) ---")
-            region_img = grab_region((x, y, w, h), monitor_index=args.monitor)
-            
-            region_detail = {}  # 存储当前区域的匹配详情
-            
-            if args.templates_dir:
-                templates = load_templates_from_dir(args.templates_dir)
-                matched_names = []
-                for name, tmpl in templates:
-                    res = match_template(region_img, tmpl, threshold=args.threshold)
-                    if res is not None:
-                        matched_names.append(name)
-                        # 记录匹配详情
-                        if 'score' not in region_detail or res['score'] > region_detail.get('score', 0):
-                            region_detail = {
-                                'score': res['score'],
-                                'bbox': {
-                                    'top_left': res['top_left'],
-                                    'bottom_right': res['bottom_right'],
-                                    'center': res['center']
-                                }
-                            }
-                        if args.show:
-                            region_img = draw_match_bbox(region_img, res["top_left"], res["bottom_right"])
-                
-                if matched_names:
-                    print(f"区域{i+1} 匹配到的模板: {', '.join(matched_names)}")
-                    all_matches.append((i+1, matched_names))
-                    match_details.append(region_detail)
-                else:
-                    print(f"区域{i+1} 未匹配到任何模板")
-                    match_details.append({})
-            else:
-                template_bgr = load_template_bgr(args.template)
-                result = match_template(region_img, template_bgr, threshold=args.threshold)
-                if result is not None:
-                    print(f"区域{i+1} 匹配成功，分数: {result['score']:.3f}")
-                    all_matches.append((i+1, [args.template]))
+        templates = load_templates_from_dir(args.templates_dir)
+        matched_names = []
+        for name, tmpl in templates:
+            res = match_template(region_img, tmpl, threshold=args.threshold)
+            if res is not None:
+                matched_names.append(name)
+                # 记录匹配详情
+                if 'score' not in region_detail or res['score'] > region_detail.get('score', 0):
                     region_detail = {
-                        'score': result['score'],
+                        'score': res['score'],
                         'bbox': {
-                            'top_left': result['top_left'],
-                            'bottom_right': result['bottom_right'],
-                            'center': result['center']
+                            'top_left': res['top_left'],
+                            'bottom_right': res['bottom_right'],
+                            'center': res['center']
                         }
                     }
-                    match_details.append(region_detail)
-                    if args.show:
-                        region_img = draw_match_bbox(region_img, result["top_left"], result["bottom_right"])
-                else:
-                    print(f"区域{i+1} 未匹配到模板")
-                    match_details.append({})
-            
-            # 显示匹配结果
-            if args.show and (args.templates_dir or args.template):
-                cv2.imshow(f"Region {i+1} Result", region_img)
+                if args.show:
+                    region_img = draw_match_bbox(region_img, res["top_left"], res["bottom_right"])
+        
+        if matched_names:
+            print(f"区域{i+1} 匹配到的模板: {', '.join(matched_names)}")
+            all_matches.append((i+1, matched_names))
+            match_details.append(region_detail)
+        else:
+            print(f"区域{i+1} 未匹配到任何模板")
+            match_details.append({})
+        
+        # 显示匹配结果
+        if args.show:
+            cv2.imshow(f"Region {i+1} Result", region_img)
         
         # OCR识别数字
         if ocr:
@@ -448,48 +381,7 @@ def main():
         
         return
     
-    # 原有的单区域模式
-    if args.region is None:
-        scene_bgr = grab_fullscreen(monitor_index=args.monitor)
-    else:
-        scene_bgr = grab_region(args.region, monitor_index=args.monitor)
 
-    # Determine matching mode
-    if args.templates_dir:
-        templates = load_templates_from_dir(args.templates_dir)
-        matched_names = []
-        for name, tmpl in templates:
-            res = match_template(scene_bgr, tmpl, threshold=args.threshold)
-            if res is not None:
-                matched_names.append(name)
-                if args.show:
-                    scene_bgr = draw_match_bbox(scene_bgr, res["top_left"], res["bottom_right"])  # overlay boxes
-
-        if matched_names:
-            print("Matched templates:")
-            for n in matched_names:
-                print(n)
-        else:
-            print("No templates matched above threshold")
-
-        if args.show and matched_names:
-            cv2.imshow("matches", scene_bgr)
-            cv2.waitKey(0)
-            cv2.destroyAllWindows()
-    else:
-        if not args.template:
-            raise SystemExit("Please provide --template or --templates_dir")
-        template_bgr = load_template_bgr(args.template)
-        result = match_template(scene_bgr, template_bgr, threshold=args.threshold)
-        if result is None:
-            print("No match above threshold")
-            return
-        print(f"Matched score={result['score']:.3f}, top_left={result['top_left']}, bottom_right={result['bottom_right']}, center={result['center']}")
-        if args.show:
-            vis = draw_match_bbox(scene_bgr, result["top_left"], result["bottom_right"])
-            cv2.imshow("match", vis)
-            cv2.waitKey(0)
-            cv2.destroyAllWindows()
 
 if __name__ == "__main__":
     main()

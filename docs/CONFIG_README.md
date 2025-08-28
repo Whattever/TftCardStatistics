@@ -6,51 +6,20 @@
 
 ## 配置文件结构
 
-### 1. GUI设置 (`gui_settings`)
-
-#### 窗口配置 (`window`)
-- `title`: 窗口标题
-- `geometry`: 窗口尺寸 (宽x高)
-- `background_color`: 主窗口背景颜色
-
-#### 控制面板 (`control_panel`)
-- `background_color`: 控制面板背景颜色
-
-#### 表格设置 (`table`)
-- `background_color`: 表格背景颜色
-- `label_colors`: 标签颜色配置
-  - `level`: Level按钮颜色
-  - `count`: 计数标签颜色
-  - `selected`: 选中状态颜色
-
-#### 图表设置 (`charts`)
-- `background_color`: 图表背景颜色
-- `text_color`: 图表文字颜色
-- `pie_chart`: 饼图配置
-  - `figsize`: 图表尺寸 [宽度, 高度]
-  - `colors`: 费用颜色列表
-- `line_chart`: 直方图配置
-  - `figsize`: 图表尺寸 [宽度, 高度]
-  - `cost_colors`: 各费用对应的颜色
-
-#### 日志设置 (`log`)
-- `background_color`: 日志区域背景颜色
-- `text_color`: 日志文字颜色
-- `max_lines`: 最大日志行数
-
-### 2. 匹配设置 (`matching_settings`)
+### 1. 匹配设置 (`matching_settings`)
 
 #### 基本参数
 - `threshold`: 图片匹配阈值 (0.5-1.0)
-- `templates_directory`: 模板图片目录
 - `monitor_index`: 显示器索引 (1-4)
 - `enable_ocr`: 是否启用OCR功能
+- `base_resolution`: 基础分辨率（不要修改）
 
 #### 固定区域 (`fixed_regions`)
 定义5个TFT卡牌检测区域，每个区域包含：
 - `id`: 区域编号
 - `name`: 区域名称
 - `coordinates`: 坐标 [x, y, 宽度, 高度]
+- `relative_coordinates`: 量化坐标 [x, y, 宽度, 高度]
 
 #### OCR区域 (`ocr_regions`)
 - `level_detection`: Level检测区域
@@ -75,8 +44,6 @@
 ### 5. 键盘快捷键 (`keyboard_shortcuts`)
 
 - `trigger_key`: 触发键 (默认: "d")
-- `exit_key`: 退出键 (默认: "f1")
-- `exit_modifier`: 退出修饰键 (默认: "ctrl")
 
 ## 配置示例
 
