@@ -1,0 +1,57 @@
+{
+  "matching_settings": {
+    "threshold": 0.68,
+    "monitor_index": 1,
+    "enable_ocr": true,
+    "fixed_regions": [
+      {
+        "id": 1,
+        "name": "区域1",
+        "coordinates": [645, 1240, 250, 185]
+      },
+      {
+        "id": 2,
+        "name": "区域2", 
+        "coordinates": [914, 1240, 250, 185]
+      },
+      {
+        "id": 3,
+        "name": "区域3",
+        "coordinates": [1183, 1240, 250, 185]
+      },
+      {
+        "id": 4,
+        "name": "区域4",
+        "coordinates": [1452, 1240, 250, 185]
+      },
+      {
+        "id": 5,
+        "name": "区域5",
+        "coordinates": [1721, 1240, 250, 185]
+      }
+    ],
+    "ocr_regions": {
+      "level_detection": {
+        "name": "Level检测区域",
+        "coordinates": [360, 1173, 27, 36]
+      },
+      "stage_detection": {
+        "name": "Stage检测区域", 
+        "coordinates": [1023, 10, 127, 35]
+      }
+    }
+  },
+  "auto_identification": {
+    "stage_monitor_interval": 0.5,
+    "buy_xp_search_interval": 2.0,
+    "max_buy_xp_search_attempts": 30,
+    "buy_xp_threshold": 0.7
+  },
+  "database": {
+    "auto_save_on_stop": true,
+    "log_directory": "log"
+  },
+  "keyboard_shortcuts": {
+    "trigger_key": "d"
+  }
+}

@@ -132,7 +132,7 @@ python run.py --templates_dir tft_units --use-fixed-regions --enable-stats
 python tools/stats_viewer.py --export-new export_new.csv
 
 # 导出的CSV包含以下信息：
-# - matches表: capture_sequence, unit_name, cost, ocr_number
+# - matches表: capture_sequence, unit_name, cost, level
 # - template_stats表: id, unit_name, cost, total_matches
 ```
 

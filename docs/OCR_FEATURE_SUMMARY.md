@@ -33,7 +33,7 @@
 - **错误处理**: 完善的异常处理和日志记录
 
 ### 2. 数据库扩展 (`src/database.py`)
-- **字段扩展**: 新增 `ocr_number` 和 `ocr_confidence` 字段
+- **字段扩展**: 新增 `level` 和 `ocr_confidence` 字段
 - **数据关联**: OCR结果与匹配记录关联存储
 - **统计支持**: 支持OCR结果的统计查询
 
@@ -117,7 +117,7 @@ ocr = NumberOCR(tesseract_path=r"C:\Program Files\Tesseract-OCR\tesseract.exe")
 
 ### 3. 结果存储
 - 将OCR结果添加到所有匹配详情中
-- 存储到数据库的 `ocr_number` 和 `ocr_confidence` 字段
+- 存储到数据库的 `level` 和 `ocr_confidence` 字段
 - 支持后续统计分析和导出
 
 ### 4. 结果展示

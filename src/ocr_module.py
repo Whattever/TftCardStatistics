@@ -87,9 +87,9 @@ class NumberOCR:
             # 尝试提取数字
             if text and text.isdigit():
                 number = int(text)
-                # 验证数字范围（0-10）
-                if 0 <= number <= 10:
-                    logger.info(f"OCR识别成功: {number}")
+                # 验证数字范围（0-80）
+                if 0 <= number <= 80:
+                    # logger.info(f"OCR识别成功: {number}")
                     # 更新上次识别结果
                     self.last_recognized_number = number
                     return number
@@ -147,6 +147,109 @@ class NumberOCR:
             logger.error(f"区域截取和识别失败: {e}")
             return self._get_fallback_number()
     
+    # def recognize_stage_from_region(self, image, region):
+    #     """专门识别stage区域的函数
+    
+    #     Args:
+    #         image: 全屏图像
+    #         region: 检测区域 (x, y, w, h)
+        
+    #     Returns:
+    #         int: 识别出的stage值，如果识别失败返回None
+    #     """
+    #     try:
+    #         # 截取指定区域
+    #         x, y, w, h = region
+    #         roi = image[y:y+h, x:x+w]
+            
+    #         # 转换为灰度图
+    #         if len(roi.shape) == 3:
+    #             roi_gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
+    #         else:
+    #             roi_gray = roi
+            
+    #         # 预处理：增强对比度
+    #         roi_gray = cv2.equalizeHist(roi_gray)
+            
+    #         # 使用Tesseract进行OCR识别
+    #         text = pytesseract.image_to_string(roi_gray, config='--psm 7 -c tessedit_char_whitelist=0123456789-')
+            
+    #         # 清理识别结果
+    #         text = text.strip().replace(' ', '')
+            
+    #         # 验证格式：必须包含一个横杠"-"
+    #         if '-' not in text:
+    #             return None
+            
+    #         # 分割两个数字
+    #         parts = text.split('-')
+    #         if len(parts) != 2:
+    #             return None
+            
+    #         # 提取两个数字
+    #         try:
+    #             num1 = int(parts[0])
+    #             num2 = int(parts[1])
+    #         except ValueError:
+    #             return None
+            
+    #         # 组合成stage值（可以根据需要调整组合方式）
+    #         # 方式1：直接拼接，如"1-2" -> 12
+    #         stage_value = num1 * 10 + num2
+            
+    #         # 方式2：保持原始格式的数值表示，如"1-2" -> 102
+    #         # stage_value = num1 * 100 + 2
+            
+    #         # 验证合理性：stage值应该在合理范围内（比如1-99）
+    #         if 1 <= stage_value <= 99:
+    #             return stage_value
+    #         else:
+    #             return None
+                
+    #     except Exception as e:
+    #         print(f"Stage识别错误: {e}")
+    #         return None
+    
+    # def validate_stage_increment(self, new_stage, previous_stage):
+    #     """验证stage值是否合理递增
+        
+    #     Args:
+    #         new_stage: 新识别的stage值
+    #         previous_stage: 之前的stage值
+            
+    #     Returns:
+    #         bool: 是否合理递增
+    #     """
+    #     if previous_stage is None:
+    #         return True  # 第一次识别，总是有效
+        
+    #     return new_stage > previous_stage
+    
+    # def recognize_stage_with_validation(self, image, region, previous_stage=None):
+    #     """带验证的stage识别函数
+        
+    #     Args:
+    #         image: 全屏图像
+    #         region: 检测区域
+    #         previous_stage: 之前的stage值，用于验证递增性
+            
+    #     Returns:
+    #         int: 验证通过的stage值，如果验证失败返回None
+    #     """
+    #     # 尝试识别stage
+    #     stage_value = self.recognize_stage_from_region(image, region)
+        
+    #     if stage_value is None:
+    #         return None
+        
+    #     # 验证递增性
+    #     if self.validate_stage_increment(stage_value, previous_stage):
+    #         return stage_value
+    #     else:
+    #         print(f"Stage值验证失败: {previous_stage} -> {stage_value}")
+    #         return None
+    
+    
     def debug_ocr(self, image: np.ndarray, region: Tuple[int, int, int, int], save_debug: bool = False) -> Optional[int]:
         """调试OCR识别过程，保存中间结果
         
@@ -189,6 +292,10 @@ def test_ocr():
     # 测试图像预处理
     test_img = np.zeros((30, 20), dtype=np.uint8)
     cv2.putText(test_img, "5", (5, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.8, 255, 2)
+
+    # 图片地址
+    # img_path = "C:/Users/wza19/workspace_ccstheia/TftCardStatistics/6-3.png"
+    # test_img = cv2.imread(img_path)
     
     print("测试图像预处理...")
     processed = ocr.preprocess_image(test_img)

@@ -123,22 +123,22 @@ def run_fixed_regions_matching(templates_dir="tft_units", monitor_index=1, thres
             print(f"\n--- OCR识别区域 {OCR_REGION} ---")
             # 截取完整屏幕进行OCR识别
             full_screen = grab_fullscreen(monitor_index=monitor_index)
-            ocr_number = ocr.recognize_number_from_region(full_screen, OCR_REGION)
+            level_number = ocr.recognize_number_from_region(full_screen, OCR_REGION)
             
             # 现在OCR总是返回一个数字（成功识别或回退值）
-            print(f"✅ OCR识别结果: 数字 {ocr_number}")
+            print(f"✅ OCR识别结果: 数字 {level_number}")
             # 将OCR结果添加到所有匹配详情中
             for detail in match_details:
-                detail['ocr_number'] = ocr_number
+                detail['level'] = level_number
                 detail['ocr_confidence'] = 0.9  # 默认置信度
                 
         except Exception as e:
             print(f"❌ OCR识别出错: {e}")
             # 使用OCR模块的回退机制，而不是硬编码的默认值
-            ocr_number = ocr._get_fallback_number()
-            print(f"使用OCR回退值: {ocr_number}")
+            level_number = ocr._get_fallback_number()
+            print(f"使用OCR回退值: {level_number}")
             for detail in match_details:
-                detail['ocr_number'] = ocr_number
+                detail['level'] = level_number
                 detail['ocr_confidence'] = 0.5  # 低置信度
     
     if show and all_matches:
@@ -156,7 +156,7 @@ def run_fixed_regions_matching(templates_dir="tft_units", monitor_index=1, thres
     
     # 显示OCR结果
     if enable_ocr and ocr:
-        ocr_result = next((detail.get('ocr_number') for detail in match_details if detail.get('ocr_number')), None)
+        ocr_result = next((detail.get('level') for detail in match_details if detail.get('level')), None)
         if ocr_result is not None:
             print(f"OCR识别数字: {ocr_result}")
     
@@ -400,22 +400,22 @@ def main():
                 print(f"\n--- OCR识别区域 {OCR_REGION} ---")
                 # 截取完整屏幕进行OCR识别
                 full_screen = grab_fullscreen(monitor_index=args.monitor)
-                ocr_number = ocr.recognize_number_from_region(full_screen, OCR_REGION)
+                level_number = ocr.recognize_number_from_region(full_screen, OCR_REGION)
                 
                 # 现在OCR总是返回一个数字（成功识别或回退值）
-                print(f"✅ OCR识别结果: 数字 {ocr_number}")
+                print(f"✅ OCR识别结果: 数字 {level_number}")
                 # 将OCR结果添加到所有匹配详情中
                 for detail in match_details:
-                    detail['ocr_number'] = ocr_number
+                    detail['level'] = level_number
                     detail['ocr_confidence'] = 0.9  # 默认置信度
                     
             except Exception as e:
                 print(f"❌ OCR识别出错: {e}")
                 # 使用OCR模块的回退机制，而不是硬编码的默认值
-                ocr_number = ocr._get_fallback_number()
-                print(f"使用OCR回退值: {ocr_number}")
+                level_number = ocr._get_fallback_number()
+                print(f"使用OCR回退值: {level_number}")
                 for detail in match_details:
-                    detail['ocr_number'] = ocr_number
+                    detail['level'] = level_number
                     detail['ocr_confidence'] = 0.5  # 低置信度
         
         if args.show and all_matches:
@@ -433,7 +433,7 @@ def main():
         
         # 显示OCR结果
         if ocr:
-            ocr_result = next((detail.get('ocr_number') for detail in match_details if detail.get('ocr_number')), None)
+            ocr_result = next((detail.get('level') for detail in match_details if detail.get('level')), None)
             if ocr_result is not None:
                 print(f"OCR识别数字: {ocr_result}")
         

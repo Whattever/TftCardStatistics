@@ -40,7 +40,7 @@ python run.py --export-new
 | capture_sequence | INTEGER | 截图序列号（当前session下的截图次数） |
 | unit_name | TEXT | 单位名称（不含费用和扩展名） |
 | cost | INTEGER | 费用（1-5） |
-| ocr_number | INTEGER | OCR识别的数字（可能为空） |
+| level | INTEGER | OCR识别的数字（可能为空） |
 
 ### template_stats表字段
 | 字段名 | 类型 | 说明 |
@@ -54,7 +54,7 @@ python run.py --export-new
 
 ```csv
 === MATCHES TABLE ===
-capture_sequence,unit_name,cost,ocr_number
+capture_sequence,unit_name,cost,level
 1,Aatrox,1,6
 1,Dr. Mundo,2,8
 1,Malzahar,3,8
@@ -82,7 +82,7 @@ id,unit_name,cost,total_matches
 - 便于进行数据关联分析
 - 支持按费用或单位名称进行分组统计
 
-### ocr_number
+### level
 - 可能为空值（NULL）
 - 表示OCR识别失败或未启用OCR功能
 - 有效值范围：0-10

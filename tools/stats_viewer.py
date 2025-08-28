@@ -122,7 +122,7 @@ def export_data(db, filename):
     # Export match data
     cursor.execute('''
         SELECT session_id, capture_time, region_number, template_name, 
-               match_score, match_bbox, ocr_number, ocr_confidence
+               match_score, match_bbox, level, ocr_confidence
         FROM matches
         ORDER BY session_id, capture_time
     ''')
@@ -174,7 +174,7 @@ def export_new_data(db, filename):
     try:
         # 查询matches表的指定字段
         cursor.execute('''
-            SELECT capture_sequence, unit_name, cost, ocr_number
+            SELECT capture_sequence, unit_name, cost, level
             FROM matches
             ORDER BY capture_sequence, unit_name
         ''')
@@ -182,7 +182,7 @@ def export_new_data(db, filename):
         
         # 查询template_stats表的指定字段
         cursor.execute('''
-            SELECT id, unit_name, cost, ocr_number, total_matches
+            SELECT id, unit_name, cost, level, total_matches
             FROM template_stats
             ORDER BY id
         ''')
@@ -197,7 +197,7 @@ def export_new_data(db, filename):
             
             # 写入matches表数据
             writer.writerow(['=== MATCHES TABLE ==='])
-            writer.writerow(['capture_sequence', 'unit_name', 'cost', 'ocr_number'])
+            writer.writerow(['capture_sequence', 'unit_name', 'cost', 'level'])
             for row in matches_data:
                 writer.writerow(row)
             
@@ -206,7 +206,7 @@ def export_new_data(db, filename):
             
             # 写入template_stats表数据
             writer.writerow(['=== TEMPLATE_STATS TABLE ==='])
-            writer.writerow(['id', 'unit_name', 'cost', 'ocr_number', 'total_matches'])
+            writer.writerow(['id', 'unit_name', 'cost', 'level', 'total_matches'])
             for row in template_stats_data:
                 writer.writerow(row)
         

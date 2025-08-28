@@ -29,13 +29,6 @@ class TFTStatsDatabase:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
             
-            # 清空现有数据库
-            # print("🧹 清空现有数据库...")
-            # cursor.execute('DROP TABLE IF EXISTS matches')
-            # cursor.execute('DROP TABLE IF EXISTS template_stats')
-            # cursor.execute('DROP TABLE IF EXISTS sessions')
-            # print("✅ 数据库已清空")
-            
             # 创建会话表 - 记录每次运行程序的信息
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS sessions (
@@ -63,8 +56,9 @@ class TFTStatsDatabase:
                     cost INTEGER NOT NULL,    -- 费用
                     match_score REAL NOT NULL,
                     match_bbox TEXT,  -- JSON格式的边界框信息
-                    ocr_number INTEGER,  -- OCR识别的数字
+                    level INTEGER,  -- 当前等级
                     ocr_confidence REAL,  -- OCR识别置信度
+                    stage INTEGER,  -- 当前阶段号
                     FOREIGN KEY (session_id) REFERENCES sessions (id)
                 )
             ''')
@@ -76,7 +70,7 @@ class TFTStatsDatabase:
                     template_name TEXT NOT NULL,  -- 移除UNIQUE约束
                     unit_name TEXT NOT NULL,  -- 单位名称（不含费用和扩展名）
                     cost INTEGER NOT NULL,    -- 费用
-                    ocr_number INTEGER,      -- OCR识别的数字（新增字段）
+                    level INTEGER,      -- 当前等级
                     total_matches INTEGER DEFAULT 0,
                     first_seen TIMESTAMP,
                     last_seen TIMESTAMP,
@@ -85,15 +79,40 @@ class TFTStatsDatabase:
                 )
             ''')
             
-            # 创建复合索引，确保unit_name + cost + ocr_number的组合是唯一的
+            # 创建复合索引，确保unit_name + cost + level
             cursor.execute('''
                 CREATE UNIQUE INDEX IF NOT EXISTS idx_unit_cost_ocr 
-                ON template_stats (unit_name, cost, ocr_number)
+                ON template_stats (unit_name, cost, level)
             ''')
             
             conn.commit()
             conn.close()
     
+    def clear_all_data(self):
+        """清除所有表的数据但保留表结构"""
+        with self.lock:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
+            try:
+                # 清除所有表的数据
+                cursor.execute('DELETE FROM matches')
+                cursor.execute('DELETE FROM template_stats')
+                cursor.execute('DELETE FROM sessions')
+                
+                # 重置自增ID
+                cursor.execute('DELETE FROM sqlite_sequence WHERE name IN (?, ?, ?)', 
+                            ('matches', 'template_stats', 'sessions'))
+                
+                conn.commit()
+                print("✅ 数据库数据已清除，表结构保留")
+                
+            except Exception as e:
+                print(f"❌ 清除数据失败: {e}")
+                conn.rollback()
+            finally:
+                conn.close()
+
     def start_session(self, templates_dir: str, threshold: float, monitor_index: int) -> int:
         """开始一个新的统计会话
         
@@ -143,7 +162,7 @@ class TFTStatsDatabase:
             print(f"📊 Statistics session {session_id} ended")
     
     def record_matches(self, session_id: int, matches: List[Tuple[int, List[str]]], 
-                       match_details: List[Dict[str, Any]] = None):
+                       match_details: List[Dict[str, Any]] = None, stage: int = None):
         """记录匹配结果
         
         Args:
@@ -180,7 +199,7 @@ class TFTStatsDatabase:
                     # 获取匹配详情
                     score = 1.0  # 默认分数
                     bbox = "{}"  # 默认边界框
-                    ocr_number = None  # 默认OCR结果
+                    level_number = None  # 默认OCR结果
                     ocr_confidence = None  # 默认OCR置信度
                     
                     if match_details and i < len(match_details):
@@ -189,19 +208,19 @@ class TFTStatsDatabase:
                             score = detail['score']
                         if 'bbox' in detail:
                             bbox = json.dumps(detail['bbox'])
-                        if 'ocr_number' in detail:
-                            ocr_number = detail['ocr_number']
+                        if 'level' in detail:
+                            level_number = detail['level']
                         if 'ocr_confidence' in detail:
                             ocr_confidence = detail['ocr_confidence']
                     
                     cursor.execute('''
                         INSERT INTO matches (session_id, capture_time, capture_sequence, region_number, 
-                                          template_name, unit_name, cost, match_score, match_bbox, ocr_number, ocr_confidence)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    ''', (session_id, datetime.now(), current_capture_count, region_num, template_name, unit_name, cost, score, bbox, ocr_number, ocr_confidence))
+                                          template_name, unit_name, cost, match_score, match_bbox, level, ocr_confidence, stage)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ''', (session_id, datetime.now(), current_capture_count, region_num, template_name, unit_name, cost, score, bbox, level_number, ocr_confidence, stage))
                     
                     # 更新模板统计
-                    self._update_template_stats(cursor, template_name, unit_name, cost, region_num, score, ocr_number)
+                    self._update_template_stats(cursor, template_name, unit_name, cost, region_num, score, level_number)
             
             conn.commit()
             conn.close()
@@ -243,14 +262,14 @@ class TFTStatsDatabase:
             print(f"⚠️ 解析模板名称 '{template_name}' 时出错: {e}")
             return template_name, 0
     
-    def _update_template_stats(self, cursor, template_name: str, unit_name: str, cost: int, region_num: int, score: float, ocr_number: int = None):
+    def _update_template_stats(self, cursor, template_name: str, unit_name: str, cost: int, region_num: int, score: float, level_number: int = None):
         """更新模板统计信息"""
-        # 根据unit_name、cost和ocr_number的组合来查找记录
-        if ocr_number is not None:
+        # 根据unit_name、cost和level_number的组合来查找记录
+        if level_number is not None:
             cursor.execute('''
                 SELECT * FROM template_stats 
-                WHERE unit_name = ? AND cost = ? AND ocr_number = ?
-            ''', (unit_name, cost, ocr_number))
+                WHERE unit_name = ? AND cost = ? AND level = ?
+            ''', (unit_name, cost, level_number))
         else:
             # 如果没有OCR数字，仍然使用template_name查找（向后兼容）
             cursor.execute('SELECT * FROM template_stats WHERE template_name = ?', (template_name,))
@@ -259,14 +278,14 @@ class TFTStatsDatabase:
         
         if existing:
             # 更新现有记录
-            if ocr_number is not None:
+            if level_number is not None:
                 cursor.execute('''
                     UPDATE template_stats 
                     SET total_matches = total_matches + 1,
                         last_seen = ?,
                         avg_score = (avg_score * total_matches + ?) / (total_matches + 1)
-                    WHERE unit_name = ? AND cost = ? AND ocr_number = ?
-                ''', (datetime.now(), score, unit_name, cost, ocr_number))
+                    WHERE unit_name = ? AND cost = ? AND level = ?
+                ''', (datetime.now(), score, unit_name, cost, level_number))
             else:
                 cursor.execute('''
                     UPDATE template_stats 
@@ -277,11 +296,11 @@ class TFTStatsDatabase:
                 ''', (datetime.now(), score, template_name))
             
             # 更新区域分布
-            if ocr_number is not None:
+            if level_number is not None:
                 cursor.execute('''
                     SELECT region_distribution FROM template_stats 
-                    WHERE unit_name = ? AND cost = ? AND ocr_number = ?
-                ''', (unit_name, cost, ocr_number))
+                    WHERE unit_name = ? AND cost = ? AND level = ?
+                ''', (unit_name, cost, level_number))
             else:
                 cursor.execute('SELECT region_distribution FROM template_stats WHERE template_name = ?', (template_name,))
             
@@ -293,12 +312,12 @@ class TFTStatsDatabase:
             
             dist[str(region_num)] = dist.get(str(region_num), 0) + 1
             
-            if ocr_number is not None:
+            if level_number is not None:
                 cursor.execute('''
                     UPDATE template_stats 
                     SET region_distribution = ?
-                    WHERE unit_name = ? AND cost = ? AND ocr_number = ?
-                ''', (json.dumps(dist), unit_name, cost, ocr_number))
+                    WHERE unit_name = ? AND cost = ? AND level = ?
+                ''', (json.dumps(dist), unit_name, cost, level_number))
             else:
                 cursor.execute('''
                     UPDATE template_stats 
@@ -309,10 +328,10 @@ class TFTStatsDatabase:
             # 创建新记录
             region_dist = {str(region_num): 1}
             cursor.execute('''
-                INSERT INTO template_stats (template_name, unit_name, cost, ocr_number, total_matches, first_seen, 
+                INSERT INTO template_stats (template_name, unit_name, cost, level, total_matches, first_seen, 
                                          last_seen, avg_score, region_distribution)
                 VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?)
-            ''', (template_name, unit_name, cost, ocr_number, datetime.now(), datetime.now(), score, json.dumps(region_dist)))
+            ''', (template_name, unit_name, cost, level_number, datetime.now(), datetime.now(), score, json.dumps(region_dist)))
     
     def get_session_summary(self, session_id: int) -> Dict[str, Any]:
         """获取会话统计摘要
